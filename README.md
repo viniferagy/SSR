@@ -185,30 +185,30 @@ The paper compares multiple generation strategies, including:
 If you already have reasoning traces for multiple methods (for example `NEU`, `SUP`, `AUG-SUP`, `SSR`), place them in a single JSONL file with a `method` field and run:
 
 ```bash
-python -m anchoring_measure.measure \
-  --input data/method_comparison.jsonl \
-  --scoring-model ${SCORING_MODEL} \
-  --output-dir results/method_comparison
+python3 -m anchoring_measure.metrics \
+  --input example.jsonl \
+  --scoring-model /models/Qwen/Qwen3-4B-Thinking-2507 \
+  --output-dir anchoring_q4b2507
 ```
 
 Then summarize by method:
 
 ```bash
-python -m anchoring_measure.aggregate \
-  --input results/method_comparison/metrics.jsonl \
+python3 -m anchoring_measure.aggregate \
+  --input anchoring_q4b2507 \
   --group-by method \
-  --output results/method_comparison/table1_summary.json
+  --output anchoring_q4b2507/table1_summary.json
 ```
 
 And generate the anchor-plane figure:
 
 ```bash
-python -m anchoring_measure.plot \
-  --input results/method_comparison/metrics.jsonl \
+python3 -m anchoring_measure.plot \
+  --input anchoring_q4b2507 \
   --group-by method \
   --x aent \
   --y aprob \
-  --output results/method_comparison/anchor_plane.png
+  --output anchoring_q4b2507/anchoring.pdf
 ```
 
 ## Citation
