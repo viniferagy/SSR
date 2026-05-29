@@ -1,0 +1,41 @@
+# Python / tooling
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local environments and package caches
+venv/
+venv-*/
+.venv/
+.uv-cache/
+.matplotlib-cache/
+.cuda-lib/
+
+# OS/editor noise
+.DS_Store
+*.swp
+*.swo
+.agents/
+.codex/
+
+# Large or stale local artifacts
+zzz_final.zip
+*.tar.gz
+archive.tar.gz
+69724c1ec765aa41cd0d22ea/
+fig*_round*.pdf
+fig3_compare_steps_and_tag_position.pdf
+reviews.txt
+
+# Local-only experimental/original project leftovers
+experimental/
+zzz_final/
+
+# Reproduction outputs are generated locally and are not committed.
+runs/
+
+# Bundled local examples are useful for smoke tests but should not be uploaded.
+scripts/examples/*.jsonl
