@@ -8,7 +8,7 @@ not meant to be uploaded.
 ## Project Layout
 
 - `scripts/anchoring_measure/`: anchoring metric implementation, aggregation,
-  plotting, and the paper-formula metric variant.
+  and plotting.
 - `scripts/rcot_generation/`: prompt templates for NEU, SUP, AUG-SUP, and SSR
   reverse-CoT generation.
 - `scripts/generate_rcot_vllm.py`: vLLM generation wrapper for four RCoT

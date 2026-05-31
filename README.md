@@ -111,14 +111,9 @@ venv/bin/python scripts/reproduce_anchoring.py \
   --force
 ```
 
-3. Compare metric variants or calibrated probabilistic anchoring if needed.
+3. Plot calibrated probabilistic anchoring if needed.
 
 ```bash
-venv/bin/python scripts/compare_metric_implementations.py \
-  --proxy runs/rcot_example/metrics/methods \
-  --paper runs/rcot_example/metrics/methods_paper_formula \
-  --out-dir runs/rcot_example/metric_formula_comparison
-
 venv/bin/python scripts/plot_aprob_visual_transforms.py \
   --metrics runs/rcot_example/calibrated_aprob/aprob_cal.metrics.jsonl \
   --out-dir runs/rcot_example/calibrated_aprob/visual_transforms \
