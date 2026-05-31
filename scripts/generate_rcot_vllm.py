@@ -237,7 +237,7 @@ def build_metric_rows(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, default=ROOT / "scripts" / "examples" / "example.jsonl")
+    parser.add_argument("--input", type=Path, default=ROOT / "scripts" / "examples" / "examples.jsonl")
     parser.add_argument("--output", type=Path, required=True, help="Metric-format JSONL with regenerated reasonings")
     parser.add_argument("--raw-output", type=Path, required=True, help="Resumable raw generation JSONL")
     parser.add_argument("--rejected-output", type=Path, default=None)

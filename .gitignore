@@ -26,6 +26,7 @@ zzz_final.zip
 *.tar.gz
 archive.tar.gz
 69724c1ec765aa41cd0d22ea/
+6a19f61c6637ca18814e83af/
 fig*_round*.pdf
 fig3_compare_steps_and_tag_position.pdf
 reviews.txt
@@ -37,5 +38,6 @@ zzz_final/
 # Reproduction outputs are generated locally and are not committed.
 runs/
 
-# Bundled local examples are useful for smoke tests but should not be uploaded.
+# Keep the generated reproduction examples, ignore other local example dumps.
 scripts/examples/*.jsonl
+!scripts/examples/examples.jsonl

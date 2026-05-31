@@ -25,9 +25,9 @@ not meant to be uploaded.
 ## Missing or Ambiguous Information
 
 - The full first-stage analysis dataset is not shipped in this repository.
-- `scripts/examples/example.jsonl` is a local smoke-test example path and is
-  ignored by Git. Place an example JSONL there or pass another path with
-  `--input`.
+- `scripts/examples/examples.jsonl` is the generated example input used in the
+  reproduction. It already contains NEU/SUP/AUG-SUP/SSR RCoT traces, so the
+  generation step can be skipped for example reproduction.
 - The exact controlled-reference source data for Figure 3 is not shipped. The
   reproduction constructs an approximation from available metric-format rows.
 - The public `Nanbeige/SSR-RCoT-16K` dataset provides SSR-format traces, but not
@@ -66,11 +66,11 @@ current Transformers, the shared-prefix cache path failed for Qwen3 because
 
 ## Example Reproduction
 
-Run Table 1/2 style metrics and Figure 4 on the local example data:
+Run Table 1/2 style metrics and Figure 4 on the generated example data:
 
 ```bash
 venv/bin/python scripts/reproduce_anchoring.py \
-  --input scripts/examples/example.jsonl \
+  --input scripts/examples/examples.jsonl \
   --run-dir runs/anchoring_example_qwen3_8b \
   --model /path/to/Qwen3-8B \
   --python venv/bin/python \
@@ -103,7 +103,7 @@ Run controlled-reference metrics and plot:
 
 ```bash
 venv/bin/python scripts/reproduce_anchoring.py \
-  --input scripts/examples/example.jsonl \
+  --input scripts/examples/examples.jsonl \
   --run-dir runs/anchoring_example_qwen3_8b \
   --model /path/to/Qwen3-8B \
   --python venv/bin/python \

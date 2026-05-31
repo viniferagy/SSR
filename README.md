@@ -45,13 +45,15 @@ reproduction scripts were tested with Qwen3-8B:
 /path/to/Qwen3-8B
 ```
 
-For a quick code-path check, place the paper example JSONL at:
+For a quick code-path check, use the generated example file:
 
 ```bash
-scripts/examples/example.jsonl
+scripts/examples/examples.jsonl
 ```
 
-You can also pass any metric-format JSONL through `--input`.
+This file already contains regenerated NEU/SUP/AUG-SUP/SSR RCoT traces, so you
+can skip the generation step in the pipeline and start directly from anchoring
+metric scoring. You can also pass any metric-format JSONL through `--input`.
 
 For larger-scale experiments, download the public dataset from Hugging Face:
 
@@ -79,11 +81,15 @@ The reproduction code is organized under `scripts/`. Core anchoring metrics are
 in `scripts/anchoring_measure/`, and RCoT prompt templates are in
 `scripts/rcot_generation/`.
 
-1. Generate or prepare RCoT traces.
+1. Optional: generate RCoT traces.
+
+You can skip this step when using `scripts/examples/examples.jsonl`, because it
+already contains generated RCoT traces for all four methods. Run this step only
+when you want to regenerate RCoT traces from another input file.
 
 ```bash
 venv/bin/python scripts/generate_rcot_vllm.py \
-  --input scripts/examples/example.jsonl \
+  --input path/to/input.metric.jsonl \
   --output runs/rcot_example/inputs/generated.metric.jsonl \
   --raw-output runs/rcot_example/generation/raw_outputs.jsonl \
   --model /path/to/Qwen3-8B \
@@ -95,7 +101,7 @@ venv/bin/python scripts/generate_rcot_vllm.py \
 
 ```bash
 venv/bin/python scripts/reproduce_anchoring.py \
-  --input runs/rcot_example/inputs/generated.metric.jsonl \
+  --input scripts/examples/examples.jsonl \
   --run-dir runs/rcot_example \
   --model /path/to/Qwen3-8B \
   --python venv/bin/python \

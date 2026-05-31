@@ -324,7 +324,7 @@ def prepare_inputs(args: argparse.Namespace, run_dir: Path) -> tuple[Path, Path]
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, default=SCRIPTS_DIR / "examples" / "example.jsonl")
+    parser.add_argument("--input", type=Path, default=SCRIPTS_DIR / "examples" / "examples.jsonl")
     parser.add_argument("--model", type=Path, default=Path("/home/pengguangyue/workspace/models/Qwen/Qwen3-8B"))
     parser.add_argument("--run-dir", type=Path, default=ROOT / "runs" / "anchoring_example_qwen3_8b")
     parser.add_argument("--python", type=Path, default=ROOT / "venv" / "bin" / "python")

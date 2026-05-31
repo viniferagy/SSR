@@ -46,7 +46,7 @@ def main() -> None:
         parts.extend([
             "",
             "## Controlled-Reference Summary",
-            "The original paper's controlled-reference data is not shipped in this repository; these rows are generated from `example.jsonl` by `scripts/prepare_anchoring_input.py controlled-reference`.",
+            "The original paper's controlled-reference data is not shipped in this repository; these rows are generated from `examples.jsonl` by `scripts/prepare_anchoring_input.py controlled-reference`.",
             "",
             read(controlled_tables / "table1_metrics.md"),
             "",
