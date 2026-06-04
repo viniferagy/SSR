@@ -15,13 +15,6 @@ try:
 except ImportError:
     DynamicCache = None
 
-# ===========================================
-# [Metrics] Hyperparameters
-# ===========================================
-TIMING_WEIGHT = 0.1
-EFFICIENCY_WEIGHT = 0.1
-SHAPE_WEIGHT = 0.1
-CERTAINTY_WEIGHT = 0.7
 LOG10_TO_BITS = 3.321928
 
 SEQ_SEP = '\n\n'
@@ -80,41 +73,22 @@ def calculate_token_lcs_recall(candidate_ids: List[int], reference_ids: List[int
 
 
 def compute_probabilistic_anchoring(ys: List[float]) -> Dict[str, float]:
-    default_result = {"ProbabilisticAnchoring": 0.0, "GainTiming": 0.0, "GainEfficiency": 0.0, "CurveShape": 0.0, "FinalCertainty": 0.0}
+    default_result = {
+        "Aprob": 0.0,
+    }
     if len(ys) < 2: return default_result
     ys_arr = np.array(ys, dtype=float)
-    
-    gains = np.diff(ys_arr)
-    abs_gains = np.abs(gains)
-    total_movement = np.sum(abs_gains)
-    DirectGain = float(ys_arr[-1] - ys_arr[0])
-    
-    if total_movement > 1e-9:
-        w_norm = abs_gains / total_movement
-        t_indices = np.arange(len(gains))
-        expected_t = np.sum(t_indices * w_norm)
-        GainTiming = 1.0 - expected_t / max(len(gains) - 1, 1)
-        GainEfficiency = np.clip(DirectGain / total_movement, 0.0, 1.0)
+
+    base_log2_per_token = float(ys_arr[0])
+    final_log2_per_token = float(ys_arr[-1])
+    bit_gain_rate = final_log2_per_token - base_log2_per_token
+    answer_entropy = -base_log2_per_token
+    if answer_entropy > 1e-12:
+        aprob_ncmi = bit_gain_rate / answer_entropy
     else:
-        GainTiming = 0.5 
-        GainEfficiency = 0.0 if DirectGain <= 0 else 1.0
-        
-    ys_min, ys_max = np.min(ys_arr), np.max(ys_arr)
-    amplitude = ys_max - ys_min
-    if amplitude > 1e-9:
-        ys_normalized = (ys_arr - ys_min) / amplitude
-        CurveShape = float(np.mean(ys_normalized))
-    else:
-        CurveShape = 0.5 
-        
-    final_log_prob = ys_arr[-1]
-    FinalCertainty = float(np.exp(np.clip(final_log_prob, -10, 0)))
-    
-    ProbabilisticAnchoring = (
-        TIMING_WEIGHT * GainTiming + EFFICIENCY_WEIGHT * GainEfficiency +
-        SHAPE_WEIGHT * CurveShape + CERTAINTY_WEIGHT * FinalCertainty
-    )
-    return {"ProbabilisticAnchoring": float(ProbabilisticAnchoring), "GainTiming": float(GainTiming), "GainEfficiency": float(GainEfficiency), "CurveShape": float(CurveShape), "FinalCertainty": float(FinalCertainty)}
+        aprob_ncmi = 0.0
+    aprob = float(np.clip(aprob_ncmi, 0.0, 1.0))
+    return {"Aprob": aprob}
 
 
 def compute_entropy_anchoring(token_entropies: List[float], step_boundaries: Optional[List[int]] = None) -> Dict[str, float]:

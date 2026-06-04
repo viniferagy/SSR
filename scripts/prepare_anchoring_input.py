@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Prepare and validate anchoring-analysis JSONL inputs.
 
-The original repository mixes notebook-only data preparation with the metric
-runner. This script keeps the metric input contract explicit:
+This script keeps the metric input contract explicit:
 
 {
   "id": ...,
@@ -12,8 +11,8 @@ runner. This script keeps the metric input contract explicit:
   "reasonings": {"NEU": "...", ...}
 }
 
-It can also convert the public SSR-RCoT-16K dataset rows into an SSR-only
-metric input, and build controlled-reference rows used for Figure 3.
+It can also convert SSR-RCoT rows into an SSR-only metric input, and build
+controlled-reference rows for stress-testing the anchoring metrics.
 """
 
 from __future__ import annotations
@@ -218,13 +217,13 @@ def main() -> None:
     p.add_argument("--strict", action="store_true")
     p.set_defaults(func=validate_metric_input)
 
-    p = sub.add_parser("convert-ssr-rcot", help="Convert public SSR-RCoT rows to SSR-only metric input")
+    p = sub.add_parser("convert-ssr-rcot", help="Convert SSR-RCoT rows to SSR-only metric input")
     p.add_argument("--input", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--method", default="SSR")
     p.set_defaults(func=convert_ssr_rcot)
 
-    p = sub.add_parser("controlled-reference", help="Build Figure 3 controlled-reference metric input")
+    p = sub.add_parser("controlled-reference", help="Build controlled-reference metric input")
     p.add_argument("--input", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--base-method", default="NEU")

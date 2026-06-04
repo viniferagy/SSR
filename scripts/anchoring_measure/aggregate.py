@@ -5,7 +5,7 @@ from collections import defaultdict
 import numpy as np
 
 # 计算代码实际写入 JSONL 的字段名（camelCase）
-PROB_ANCHORING_KEY = "ProbabilisticAnchoring"
+PROB_ANCHORING_KEY = "Aprob"
 ENT_ANCHORING_KEY  = "entropy_anchoring"   # 计算代码此字段已是 snake_case
 LEX_ANCHORING_KEY  = "lexical_anchoring"
 
@@ -33,7 +33,6 @@ def main():
                     k: v for k, v in record.items()
                     if isinstance(v, (int, float)) and k != "sample_idx"
                 }
-
                 # 任意数值字段为 nan/inf，跳过整条记录
                 if any(not np.isfinite(v) for v in numeric_fields.values()):
                     skipped[group_val] += 1

@@ -1,7 +1,7 @@
 [project]
-name = "ssr-anchoring-repro"
+name = "ssr"
 version = "0.1.0"
-description = "Reproduction utilities for SSR anchoring analysis on local Qwen models."
+description = "Self-contained pipeline for SSR reverse chain-of-thought generation and anchoring analysis."
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "accelerate>=1.13.0",

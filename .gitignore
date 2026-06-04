@@ -35,9 +35,9 @@ reviews.txt
 experimental/
 zzz_final/
 
-# Reproduction outputs are generated locally and are not committed.
+# Pipeline outputs are generated locally and are not committed.
 runs/
 
-# Keep the generated reproduction examples, ignore other local example dumps.
+# Keep the bundled generated examples, ignore other local example dumps.
 scripts/examples/*.jsonl
 !scripts/examples/examples.jsonl
