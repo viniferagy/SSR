@@ -15,6 +15,7 @@ import numpy as np
 
 
 METHOD_ORDER = ["NEU", "SUP", "AUG-SUP", "SSR"]
+CONTROL_ORDER = ["Real CoT", "+Prob Anchor", "+Entropy Anchor", "Response as CoT"]
 ZONE_KEYS = ["Reason", "Encode", "Cloze", "Copy"]
 Y_LABEL = "Probabilistic Anchoring"
 
@@ -60,8 +61,21 @@ def zone_thresholds(records: List[Dict[str, Any]], quantile: float) -> tuple[flo
     }
 
 
+def infer_method_order(records: List[Dict[str, Any]]) -> List[str]:
+    methods = {str(row["method"]) for row in records}
+    if methods.issubset(set(METHOD_ORDER)):
+        return [method for method in METHOD_ORDER if method in methods]
+    if methods.issubset(set(CONTROL_ORDER)):
+        return [method for method in CONTROL_ORDER if method in methods]
+    known = METHOD_ORDER + CONTROL_ORDER
+    ordered = [method for method in known if method in methods]
+    ordered.extend(sorted(methods.difference(ordered)))
+    return ordered
+
+
 def plot_records(
     records: List[Dict[str, Any]],
+    method_order: List[str],
     ylabel: str,
     output_stem: Path,
     x_thr: float,
@@ -71,10 +85,12 @@ def plot_records(
     for row in records:
         grouped[row["method"]].append(row)
 
-    fig, axes = plt.subplots(1, len(METHOD_ORDER), figsize=(4.3 * len(METHOD_ORDER), 4.3))
+    fig, axes = plt.subplots(1, len(method_order), figsize=(4.3 * len(method_order), 4.3))
+    if len(method_order) == 1:
+        axes = [axes]
     colors = {"Reason": "green", "Encode": "orange", "Cloze": "blue", "Copy": "red"}
     cmap, norm = plt.cm.coolwarm, plt.Normalize(0.0, 1.0)
-    for idx, method in enumerate(METHOD_ORDER):
+    for idx, method in enumerate(method_order):
         ax = axes[idx]
         rows = grouped.get(method, [])
         x = np.array([r["entropy_anchoring"] for r in rows], dtype=float)
@@ -114,7 +130,7 @@ def plot_records(
     plt.close(fig)
 
 
-def summarize(rows: List[Dict[str, Any]], x_thr: float, y_thr: float) -> Dict[str, Dict[str, Any]]:
+def summarize(rows: List[Dict[str, Any]], method_order: List[str], x_thr: float, y_thr: float) -> Dict[str, Dict[str, Any]]:
     grouped: Dict[str, Dict[str, List[float]]] = defaultdict(lambda: defaultdict(list))
     for row in rows:
         method = row["method"]
@@ -122,7 +138,7 @@ def summarize(rows: List[Dict[str, Any]], x_thr: float, y_thr: float) -> Dict[st
         grouped[method]["Aent"].append(float(row["entropy_anchoring"]))
         grouped[method]["Aprob"].append(float(row["Aprob"]))
     summary: Dict[str, Dict[str, Any]] = {}
-    for method in METHOD_ORDER:
+    for method in method_order:
         item = grouped.get(method)
         if not item:
             continue
@@ -158,10 +174,16 @@ def markdown_table(headers: List[str], rows: List[List[Any]]) -> str:
     return "\n".join(out) + "\n"
 
 
-def write_summary_tables(prefix: str, stem: str, summary: Dict[str, Dict[str, Any]], out_dir: Path) -> None:
+def write_summary_tables(
+    prefix: str,
+    stem: str,
+    summary: Dict[str, Dict[str, Any]],
+    method_order: List[str],
+    out_dir: Path,
+) -> None:
     metric_rows = []
     zone_rows = []
-    for method in METHOD_ORDER:
+    for method in method_order:
         if method not in summary:
             continue
         item = summary[method]
@@ -216,14 +238,20 @@ def main() -> None:
     args = parser.parse_args()
 
     rows = scale_aprob(read_jsonl(args.metrics))
+    method_order = infer_method_order(rows)
     x_thr, y_thr, threshold_meta = zone_thresholds(rows, args.zone_quantile)
     plot_stem = args.out_dir / args.prefix
-    plot_records(rows, Y_LABEL, plot_stem, x_thr, y_thr)
-    summary = summarize(rows, x_thr, y_thr)
-    write_summary_tables(args.prefix, args.prefix, summary, args.out_dir)
+    plot_records(rows, method_order, Y_LABEL, plot_stem, x_thr, y_thr)
+    summary = summarize(rows, method_order, x_thr, y_thr)
+    write_summary_tables(args.prefix, args.prefix, summary, method_order, args.out_dir)
 
     report_path = args.out_dir / f"{args.prefix}_summary.json"
-    report = {"source_metrics": str(args.metrics), "zone_threshold": threshold_meta, "summary": summary}
+    report = {
+        "source_metrics": str(args.metrics),
+        "method_order": method_order,
+        "zone_threshold": threshold_meta,
+        "summary": summary,
+    }
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(report_path)
 
