@@ -7,9 +7,9 @@
 <a href="https://huggingface.co/datasets/Nanbeige/SSR-RCoT-16K">🤗 Dataset</a>
 </p>
 
-This is the official implementation of **Measuring and Mitigating Post-hoc
-Rationalization in Reverse Chain-of-Thought Generation**, accepted by **ICML
-2026**.
+This is the official implementation of **[Measuring and Mitigating Post-hoc
+Rationalization in Reverse Chain-of-Thought Generation](https://openreview.net/forum?id=cY0pi9WHvL)**,
+**ICML 2026**.
 
 ## Environment Setup
 
@@ -117,10 +117,11 @@ summarizes `Reason`, `Encode`, `Cloze`, and `Copy`.
 ## Citation
 
 ```bibtex
-@misc{peng2026rcganchoring,
-  title={Measuring and Mitigating Post-hoc Rationalization in Reverse Chain-of-Thought Generation},
+@inproceedings{peng2026rcganchoring,
+  title={Measuring and Mitigating Post-Hoc Rationalization in Reverse Chain-of-Thought Generation},
   author={Guangyue Peng and Zongchao Chen and Wen Luo and Yuntao Wen and Wei Li and Ruixiang Feng and Ran Le and Chen Yang and Zhenwei An and Yang Song and Tao Zhang and Houfeng Wang},
+  booktitle={Forty-third International Conference on Machine Learning},
   year={2026},
-  note={ICML 2026}
+  url={https://openreview.net/forum?id=cY0pi9WHvL}
 }
 ```
