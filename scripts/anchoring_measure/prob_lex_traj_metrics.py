@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Compute/aggregate the claude.traj.md three anchoring metrics.
+"""Compute and aggregate the final three anchoring metrics.
 
 Definitions:
-- A_lex: IDF-weighted recall of answer content words in reasoning.
+- A_lex: question-filtered IDF-weighted recall of answer content words.
 - A_prob: clipped normalized answer-surprisal reduction, multiplied by 100 in
   summary tables.
 - A_traj: 100 * ConfidenceGap_mean from the mismatch diagnostic run.
@@ -54,20 +54,15 @@ LEXICAL_METRIC_KEYS = [
     "A_lex_QF_E50",
 ]
 METHOD_ORDER = [
-    "R0 / Blind CoT",
+    "Blind CoT",
     "NEU",
     "SUP",
     "AUG-SUP",
     "QA-SUP",
     "PG-SUP",
     "SSR",
-    "SSR_PLUS",
-    "SSR_PLUS_STRUCT",
-    "SSR_PLUS_STRUCT_BALANCED",
-    "SSR_PLUS_STRUCT_C1_STEPS",
-    "SSR_PLUS_STRUCT_LONG",
-    "SSR_QSKEL",
-    "SSR_2STEP_QA",
+    "SSR-SCHEMA",
+    "SSR-DENSE",
     "A1-FDB",
     "A6-Gist",
     "B11-NGramBlock",
@@ -76,8 +71,9 @@ METHOD_ORDER = [
     "CV-SUP",
     "DL-SUP",
     "FS-SUP",
-    "SSR_PLUS_STRUCT_COMPACT",
-    "SSR_PLUS_STRUCT_MID",
+    "+Prob Anchor",
+    "+Traj Anchor",
+    "Response-as-CoT",
 ]
 
 
@@ -381,14 +377,16 @@ def read_prob_metrics(path: Path) -> Dict[tuple[int, str], Dict[str, Any]]:
     return out
 
 
-def read_traj(path: Path) -> Dict[str, tuple[int, float]]:
-    out: Dict[str, tuple[int, float]] = {}
-    if not path.exists():
-        return out
-    with path.open("r", encoding="utf-8", newline="") as f:
-        for row in csv.DictReader(f):
-            if row.get("metric") == "ConfidenceGap_mean":
-                out[str(row["method"])] = (int(float(row["n"])), 100.0 * float(row["mean"]))
+def read_traj_metrics(path: Path) -> Dict[tuple[int, str], float]:
+    """Read per-example trajectory scores produced by commitment_kl.py."""
+    out: Dict[tuple[int, str], float] = {}
+    files = [path] if path.is_file() else sorted(path.glob("commitment_metrics_rank*.jsonl"))
+    for file in files:
+        for row in read_jsonl(file):
+            value = row.get("ConfidenceGap_mean")
+            if value is None or not math.isfinite(float(value)):
+                continue
+            out[(int(row["sample_idx"]), str(row["method"]))] = 100.0 * float(value)
     return out
 
 
@@ -397,7 +395,7 @@ def aggregate(args: argparse.Namespace) -> None:
     methods = [m for m in args.methods.split(",") if m] if args.methods else method_order({m for row in rows for m in row.get("questions", {})})
     idf = build_idf(rows, methods)
     prob = read_prob_metrics(args.prob_metrics)
-    traj = read_traj(args.traj_csv)
+    traj = read_traj_metrics(args.traj_metrics)
 
     per_record: List[Dict[str, Any]] = []
     for sample_idx, row in enumerate(rows):
@@ -408,7 +406,8 @@ def aggregate(args: argparse.Namespace) -> None:
             if not (q.strip() and a.strip() and r.strip()):
                 continue
             p = prob.get((sample_idx, method))
-            if not p:
+            a_traj = traj.get((sample_idx, method))
+            if not p or a_traj is None:
                 continue
             lexical_metrics = {
                 "A_lex": content_idf_recall(r, a, idf),
@@ -438,6 +437,7 @@ def aggregate(args: argparse.Namespace) -> None:
                     "method": method,
                     **lexical_metrics,
                     "A_prob": float(p["Aprob"]),
+                    "A_traj": float(a_traj),
                     "B_100": float(p.get("B_100", float("nan"))),
                     "reasoning_tokens": int(p.get("reasoning_tokens", 0)),
                 }
@@ -448,7 +448,6 @@ def aggregate(args: argparse.Namespace) -> None:
         vals = [r for r in per_record if r["method"] == method]
         if not vals:
             continue
-        n_traj, a_traj = traj.get(method, (0, float("nan")))
         summary_rows.append(
             {
                 "Method": method,
@@ -457,8 +456,7 @@ def aggregate(args: argparse.Namespace) -> None:
                     key: 100.0 * float(np.mean([float(r[key]) for r in vals]))
                     for key in LEXICAL_METRIC_KEYS
                 },
-                "A_traj": a_traj,
-                "A_traj_N": n_traj,
+                "A_traj": float(np.mean([float(r["A_traj"]) for r in vals])),
                 "A_prob": 100.0 * float(np.mean([float(r["A_prob"]) for r in vals])),
                 "B_100": float(np.mean([float(r["B_100"]) for r in vals if math.isfinite(float(r["B_100"]))])),
                 "Avg_R_tokens": float(np.mean([int(r["reasoning_tokens"]) for r in vals])),
@@ -466,27 +464,26 @@ def aggregate(args: argparse.Namespace) -> None:
         )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    per_fields = ["sample_idx", "method", *LEXICAL_METRIC_KEYS, "A_prob", "B_100", "reasoning_tokens"]
-    with (args.output_dir / "qwen3_4b_traj_three_metrics_per_record.csv").open("w", encoding="utf-8", newline="") as f:
+    per_fields = ["sample_idx", "method", *LEXICAL_METRIC_KEYS, "A_traj", "A_prob", "B_100", "reasoning_tokens"]
+    with (args.output_dir / "anchoring_metrics_per_record.csv").open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=per_fields)
         writer.writeheader()
         writer.writerows(per_record)
-    fields = ["Method", "N", *LEXICAL_METRIC_KEYS, "A_traj", "A_traj_N", "A_prob", "B_100", "Avg_R_tokens"]
-    with (args.output_dir / "qwen3_4b_traj_three_metrics.csv").open("w", encoding="utf-8", newline="") as f:
+    fields = ["Method", "N", *LEXICAL_METRIC_KEYS, "A_traj", "A_prob", "B_100", "Avg_R_tokens"]
+    with (args.output_dir / "anchoring_metrics.csv").open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
         writer.writerows(summary_rows)
     md_lines = [
-        "| Method | N | A_lex | A_lex_E50 | A_lex_QF | A_lex_QF_E50 | A_traj | A_traj N | A_prob | B_100 | Avg R tokens |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Method | N | A_lex_QF | A_lex_QF_E50 | A_traj | A_prob | B_100 | Avg R tokens |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in summary_rows:
         md_lines.append(
-            f"| {row['Method']} | {row['N']} | {row['A_lex']:.3f} | {row['A_lex_E50']:.3f} | "
-            f"{row['A_lex_QF']:.3f} | {row['A_lex_QF_E50']:.3f} | {row['A_traj']:.6f} | "
-            f"{row['A_traj_N']} | {row['A_prob']:.3f} | {row['B_100']:.3f} | {row['Avg_R_tokens']:.1f} |"
+            f"| {row['Method']} | {row['N']} | {row['A_lex_QF']:.3f} | {row['A_lex_QF_E50']:.3f} | "
+            f"{row['A_traj']:.3f} | {row['A_prob']:.3f} | {row['B_100']:.3f} | {row['Avg_R_tokens']:.1f} |"
         )
-    (args.output_dir / "qwen3_4b_traj_three_metrics.md").write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+    (args.output_dir / "anchoring_metrics.md").write_text("\n".join(md_lines) + "\n", encoding="utf-8")
 
     lex_lines = [
         "| Method | N | A_lex | A_lex_E25 | A_lex_E50 | A_lex_QF | A_lex_QF_E25 | A_lex_QF_E50 |",
@@ -498,24 +495,23 @@ def aggregate(args: argparse.Namespace) -> None:
             f"{row['A_lex_E50']:.3f} | {row['A_lex_QF']:.3f} | {row['A_lex_QF_E25']:.3f} | "
             f"{row['A_lex_QF_E50']:.3f} |"
         )
-    (args.output_dir / "qwen3_4b_lexical_diagnostics.md").write_text("\n".join(lex_lines) + "\n", encoding="utf-8")
+    (args.output_dir / "lexical_diagnostics.md").write_text("\n".join(lex_lines) + "\n", encoding="utf-8")
 
     manifest = {
         "definition_alignment": {
-            "source_plan": "/home/pengguangyue/workspace/proj/lvr-eval-mechanistic-audit/insights/claude.traj.md",
-            "A_lex": "Content_IDF: IDF-weighted answer-content recall in reasoning, reported as 100 * mean. Unicode alphabetic spans are tokenized as words rather than single characters.",
-            "A_lex_E25": "Same lexical recall restricted to the first 25% of reasoning content tokens.",
-            "A_lex_E50": "Same lexical recall restricted to the first 50% of reasoning content tokens.",
-            "A_lex_QF": "Question-filtered lexical recall after removing answer content terms that already appear in the question.",
+            "A_lex": "Unfiltered IDF-weighted answer-content recall in reasoning, reported as 100 * mean; retained only as a lexical diagnostic.",
+            "A_lex_E25": "Unfiltered lexical diagnostic restricted to the first 25% of reasoning content tokens.",
+            "A_lex_E50": "Unfiltered lexical diagnostic restricted to the first 50% of reasoning content tokens.",
+            "A_lex_QF": "Final A_lex metric: IDF-weighted recall after removing answer content terms already present in the question, reported as 100 * mean. Unicode alphabetic spans are tokenized as words rather than single characters.",
             "A_lex_QF_E25": "Question-filtered lexical recall restricted to the first 25% of reasoning content tokens.",
             "A_lex_QF_E50": "Question-filtered lexical recall restricted to the first 50% of reasoning content tokens.",
-            "A_traj": "100 * ConfidenceGap_mean from Qwen3-4B-Thinking-2507 mismatch diagnostics, matching the percentage-point reporting scale used for A_lex and A_prob.",
-            "A_prob": "clipped normalized answer-surprisal reduction from Qwen3-4B-Thinking-2507 scorer, reported as 100 * mean.",
+            "A_traj": "100 * mean next-token entropy reduction from answer visibility over sampled reasoning prefixes.",
+            "A_prob": "Clipped normalized answer-surprisal reduction from the configured scorer, reported as 100 * mean.",
             "B_100": "Appendix robustness value: raw bit gain * 100, unnormalized.",
         },
         "input": str(args.input),
         "prob_metrics": str(args.prob_metrics),
-        "traj_csv": str(args.traj_csv),
+        "traj_metrics": str(args.traj_metrics),
         "records": len(per_record),
         "methods": [row["Method"] for row in summary_rows],
     }
@@ -541,7 +537,7 @@ def main() -> None:
     p = sub.add_parser("aggregate")
     p.add_argument("--input", type=Path, required=True)
     p.add_argument("--prob-metrics", type=Path, required=True)
-    p.add_argument("--traj-csv", type=Path, required=True)
+    p.add_argument("--traj-metrics", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, required=True)
     p.add_argument("--methods", default="")
     p.set_defaults(func=aggregate)

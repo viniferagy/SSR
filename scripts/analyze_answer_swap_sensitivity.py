@@ -451,7 +451,7 @@ def main() -> None:
     score.add_argument("--methods", default=",".join(METHODS))
     score.add_argument("--delta-pairs", default=",".join(f"{m}-{b}" for m, b in DELTA_PAIRS))
     score.add_argument("--limit", type=int)
-    score.add_argument("--embedding-model", type=Path, default=Path("/home/pengguangyue/workspace/models/xlm-roberta-large"))
+    score.add_argument("--embedding-model", type=Path, required=True)
     score.add_argument("--device", default=None)
     score.add_argument("--batch-size", type=int, default=16)
     score.add_argument("--max-length", type=int, default=512)

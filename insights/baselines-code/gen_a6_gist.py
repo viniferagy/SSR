@@ -18,7 +18,6 @@ gist 文本单独入档：后续可对 gist 本身算 a_lex（vs A），与 SSR 
 import argparse
 
 from transformers import AutoTokenizer
-from vllm import LLM
 
 from common import (build_chat, load_jsonl, save_jsonl, split_steps_by_blankline,
                     substring_token_span, vllm_generate)
@@ -39,6 +38,8 @@ def main():
     ap.add_argument("--temperature", type=float, default=0.8)
     ap.add_argument("--max-model-len", type=int, default=32768)
     args = ap.parse_args()
+
+    from vllm import LLM
 
     data = load_jsonl(args.input)
     tok = AutoTokenizer.from_pretrained(args.model)

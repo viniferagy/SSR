@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render a compact Markdown report for anchoring-analysis outputs."""
+"""Render a compact report from the final anchoring pipeline outputs."""
 
 from __future__ import annotations
 
@@ -7,50 +7,39 @@ import argparse
 from pathlib import Path
 
 
-def read(path: Path) -> str:
-    return path.read_text(encoding="utf-8").strip()
+def optional_read(path: Path) -> str:
+    return path.read_text(encoding="utf-8").strip() if path.exists() else "Not generated."
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--run-dir", type=Path, default=Path("runs/anchoring_example"))
-    parser.add_argument("--output", type=Path, default=None)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--run-dir", type=Path, required=True)
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    run_dir = args.run_dir
-    output = args.output or (run_dir / "report.md")
+    output = args.output or args.run_dir / "report.md"
+    methods = args.run_dir / "results" / "methods" / "anchoring_metrics.md"
+    controls = args.run_dir / "results" / "controlled" / "anchoring_metrics.md"
+    figures = args.run_dir / "figures"
 
-    method_dir = run_dir / "figures" / "methods"
-    controlled_dir = run_dir / "figures" / "controlled"
-
-    parts = [
-        "# Anchoring Analysis Report",
+    lines = [
+        "# SSR Anchoring Analysis",
         "",
-        f"Run directory: `{run_dir}`",
+        "## Main Methods",
         "",
-        "## Table 1: Method Metrics",
-        read(method_dir / "methods_table1_metrics.md"),
-        "",
-        "## Table 2: Behavioral Zones",
-        read(method_dir / "methods_table2_zones.md"),
-        "",
-        "## Figures",
-        f"- Methods: `{method_dir / 'methods.pdf'}`",
+        optional_read(methods),
     ]
-    controlled_plot = controlled_dir / "controlled.pdf"
-    if controlled_plot.exists():
-        parts.append(f"- Controlled reference: `{controlled_plot}`")
-    if controlled_dir.exists():
-        parts.extend([
-            "",
-            "## Controlled-Reference Summary",
-            "Controlled-reference rows are generated from the selected metric-format input.",
-            "",
-            read(controlled_dir / "controlled_table1_metrics.md"),
-            "",
-            read(controlled_dir / "controlled_table2_zones.md"),
-        ])
-    parts.append("")
-    output.write_text("\n".join(parts), encoding="utf-8")
+    if controls.exists():
+        lines.extend(["", "## Controlled References", "", optional_read(controls)])
+    method_figure = figures / "behavioral_zones_methods.pdf"
+    control_figure = figures / "behavioral_zones_controlled.pdf"
+    if method_figure.exists() or control_figure.exists():
+        lines.extend(["", "## Behavioral Zones", ""])
+        if method_figure.exists():
+            lines.append(f"- Main methods: `{method_figure}`")
+        if control_figure.exists():
+            lines.append(f"- Controlled references: `{control_figure}`")
+    lines.append("")
+    output.write_text("\n".join(lines), encoding="utf-8")
     print(output)
 
 

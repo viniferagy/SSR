@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Heuristic quality-slice diagnostics for SSR candidate variants.
+"""Heuristic quality-slice diagnostics for generated reasoning methods.
 
 The diagnostics are intentionally lightweight and dependency-free:
 
@@ -7,8 +7,8 @@ The diagnostics are intentionally lightweight and dependency-free:
 - task-type stratification for per-record A_prob;
 - simple-surface-task overreasoning scan from prompt/answer length and trace length.
 
-These are not replacement metrics. They are risk screens for comparing candidate
-prompt variants on the same sample order.
+These are not replacement metrics. They are risk screens for comparing methods
+on the same sample order.
 """
 
 from __future__ import annotations
@@ -28,10 +28,9 @@ FRIENDLY_LABELS = {
     "NEU": "NEU",
     "SUP": "SUP",
     "AUG-SUP": "AUG-SUP",
-    "SSR": "paper SSR",
-    "SSR_PLUS_STRUCT_BALANCED_DERIVATIONAL_R": "final-label SSR",
-    "SSR_PLUS_STRUCT_BALANCED_DERIVATIONAL_R_ENDPOINT_GUARD_TARGET_HEADER_LIGHT": "Endpoint-light",
-    "SSR_PLUS_STRUCT_BALANCED_DERIVATIONAL_R_ENDPOINT_GUARD_TARGET_HEADER_INNER_MONOLOGUE_VERB_CLOSE_OBJECT_INDEXED_OBJECT_DENSE": "Indexed-dense",
+    "SSR": "SSR",
+    "SSR-SCHEMA": "SSR-SCHEMA",
+    "SSR-DENSE": "SSR-DENSE",
 }
 
 STOPWORDS = {

@@ -115,7 +115,7 @@ ENDPOINT_SYSTEM = (
     "decision, or is so generic that no compatible endpoint can be identified. "
     "Score 5 for clearly aligned abstract endpoint, 3 for ambiguous but plausible "
     "alignment, and 1 for a different or incompatible endpoint. Output only JSON: "
-    "{\"endpoint_consistent\": true|false, \"score\": 1-5, \"reason\": \"one sentence\"}."
+    "{\"consistent\": true|false, \"score\": 1-5, \"reason\": \"one sentence\"}."
 )
 
 ENDPOINT_USER = """[QUESTION]
@@ -733,13 +733,13 @@ def write_endpoint_outputs(args: argparse.Namespace, methods: Sequence[str], out
     summary = []
     for method in methods:
         vals = [r for r in out_rows if r["method"] == method]
-        valid = [r for r in vals if isinstance(r.get("endpoint_consistent"), bool)]
+        valid = [r for r in vals if isinstance(r.get("consistent"), bool)]
         summary.append(
             {
                 "method": method,
                 "n": len(vals),
                 "valid": len(valid),
-                "consistent_rate": (sum(1 for r in valid if r["endpoint_consistent"]) / len(valid)) if valid else None,
+                "consistent_rate": (sum(1 for r in valid if r["consistent"]) / len(valid)) if valid else None,
                 "mean_score": (sum(float(r.get("score") or 0) for r in valid) / len(valid)) if valid else None,
             }
         )
@@ -774,7 +774,7 @@ def cmd_endpoint_vllm(args: argparse.Namespace, methods: Sequence[str], prompts:
                 {
                     "sample_idx": sample_idx,
                     "method": method,
-                    "endpoint_consistent": parsed.get("endpoint_consistent"),
+                    "consistent": parsed.get("consistent"),
                     "score": parsed.get("score"),
                     "reason": parsed.get("reason"),
                     "raw_output": text,
@@ -825,7 +825,7 @@ def cmd_endpoint_hf(args: argparse.Namespace, methods: Sequence[str], prompts: L
                 {
                     "sample_idx": sample_idx,
                     "method": method,
-                    "endpoint_consistent": parsed.get("endpoint_consistent"),
+                    "consistent": parsed.get("consistent"),
                     "score": parsed.get("score"),
                     "reason": parsed.get("reason"),
                     "raw_output": text,
@@ -851,7 +851,7 @@ def cmd_endpoint(args: argparse.Namespace) -> None:
 
 
 def add_vllm_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--model", type=Path, default=Path("/home/pengguangyue/workspace/models/Qwen/Qwen3-8B"))
+    parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--tensor-parallel-size", type=int, default=4)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.90)
     parser.add_argument("--max-num-seqs", type=int, default=None)
@@ -913,7 +913,7 @@ def main() -> None:
     p.add_argument("--summary-output", type=Path, default=None)
     p.add_argument("--methods", default="")
     p.add_argument("--limit", type=int, default=None)
-    p.add_argument("--judge-model", type=Path, default=Path("/home/pengguangyue/workspace/models/Qwen/Qwen3-8B"))
+    p.add_argument("--judge-model", type=Path, required=True)
     p.add_argument("--endpoint-engine", choices=["vllm", "hf"], default="vllm")
     p.add_argument("--device-map", default="", help="HF endpoint only: optional device_map, e.g. auto for multi-GPU.")
     p.add_argument("--max-tokens", type=int, default=256)

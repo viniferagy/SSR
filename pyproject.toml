@@ -20,6 +20,10 @@ dependencies = [
 generation = [
     "vllm>=0.8.0",
 ]
+diagnostics = [
+    "rapidfuzz>=3.0",
+    "sentence-transformers>=3.0",
+]
 
 [tool.uv]
 python-preference = "managed"

@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Measure answer-control KL along reasoning prefixes.
+"""Measure answer-conditioned continuation sensitivity along reasoning prefixes.
 
 For a fixed observed reasoning prefix R[:t], this script compares the next-token
 distribution with and without the final answer A in the prompt:
 
     KL_t = KL(P(. | Q, A, R[:t]) || P(. | Q, R[:t]))
+    Gap_t = H(P(. | Q, R[:t])) - H(P(. | Q, A, R[:t]))
 
-Large values mean that adding A still changes the model's continuation
-distribution at that prefix.  In this implementation the metric is therefore
-interpreted as answer-control sensitivity rather than final-answer bit gain.
+Large values mean that adding A still changes or sharpens the model's
+continuation distribution at that prefix. The final A_traj metric uses the mean
+entropy gap; KL and Jensen-Shannon divergence are retained as diagnostics.
 """
 
 from __future__ import annotations
@@ -453,7 +454,7 @@ def main() -> None:
     p_score = sub.add_parser("score")
     p_score.add_argument("--input", type=Path, required=True)
     p_score.add_argument("--output-dir", type=Path, required=True)
-    p_score.add_argument("--scoring-model", type=Path, default=Path("/home/pengguangyue/workspace/models/Qwen/Qwen3-8B"))
+    p_score.add_argument("--scoring-model", type=Path, required=True)
     p_score.add_argument("--methods", default=",".join(METHODS))
     p_score.add_argument("--fractions", default=",".join(str(x) for x in FRACTIONS))
     p_score.add_argument("--start-index", type=int, default=0, help="Start row offset for resumable chunk scoring; sample_idx keeps this global offset.")

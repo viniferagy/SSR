@@ -191,7 +191,7 @@ QUALITY_GATE_SYSTEM = (
     "question; (3) whether the trace's endpoint conclusion is semantically "
     "consistent with the reference answer.\n"
     "Output ONLY a JSON object: {\"score\": <1-5 integer>, "
-    "\"endpoint_consistent\": <true|false>, \"reason\": \"<one sentence>\"}"
+    "\"consistent\": <true|false>, \"reason\": \"<one sentence>\"}"
 )
 
 QUALITY_GATE_USER = """[QUESTION]
@@ -207,7 +207,7 @@ ENDPOINT_JUDGE_SYSTEM = (
     "Judge whether the conclusion reached at the END of the reasoning trace is "
     "semantically consistent with the reference answer's core claims. Minor wording "
     "differences are fine; contradictions or missing core claims are not.\n"
-    "Output ONLY a JSON object: {\"endpoint_consistent\": <true|false>, "
+    "Output ONLY a JSON object: {\"consistent\": <true|false>, "
     "\"reason\": \"<one sentence>\"}"
 )
 

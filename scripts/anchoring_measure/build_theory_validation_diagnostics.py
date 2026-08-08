@@ -248,27 +248,24 @@ def write_report(path: Path, skel: dict[str, Any], swap: list[dict[str, Any]], p
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=Path, default=Path.cwd())
-    parser.add_argument("--out-dir", type=Path, default=None)
-    parser.add_argument("--ssr-input", type=Path, default=None)
-    parser.add_argument("--method", default="SSR_PLUS_STRUCT_BALANCED_DERIVATIONAL_R")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--ssr-input", type=Path, required=True)
+    parser.add_argument("--answer-swap-summary", type=Path, required=True)
+    parser.add_argument("--answer-swap-deltas", type=Path, required=True)
+    parser.add_argument("--prob-metrics", type=Path, required=True)
+    parser.add_argument("--out-dir", type=Path, required=True)
+    parser.add_argument("--method", default="SSR")
     args = parser.parse_args()
 
-    root = args.root.resolve()
-    run = root / "runs/paper_fixed_method_set_qwen3_4b/n1000"
-    out_dir = args.out_dir or (run / "theory_validation")
-    ssr_input = args.ssr_input or (root / "runs/ssr_plus_struct_balanced_derivational_r_full1k/inputs/balanced_n1000.metric.jsonl")
+    skel = skeleton_leakage(args.ssr_input, args.method)
+    swap = answer_swap(args.answer_swap_summary, args.answer_swap_deltas)
+    prob = prob_boundaries(args.prob_metrics)
 
-    skel = skeleton_leakage(ssr_input, args.method)
-    swap = answer_swap(run / "answer_swap/results/summary_by_method.csv", run / "answer_swap/results/paired_deltas_vs_neu.csv")
-    prob = prob_boundaries(run / "prob_metrics")
-
-    write_csv(out_dir / "skeleton_leakage_summary.csv", skel)
-    write_csv(out_dir / "answer_swap_theory_summary.csv", swap)
-    write_csv(out_dir / "prob_boundary_diagnostics.csv", prob)
-    write_report(out_dir / "theory_validation_report.md", skel, swap, prob)
-    print(f"Wrote theory validation diagnostics to {out_dir}")
+    write_csv(args.out_dir / "skeleton_leakage_summary.csv", skel)
+    write_csv(args.out_dir / "answer_swap_theory_summary.csv", swap)
+    write_csv(args.out_dir / "prob_boundary_diagnostics.csv", prob)
+    write_report(args.out_dir / "theory_validation_report.md", skel, swap, prob)
+    print(f"Wrote theory validation diagnostics to {args.out_dir}")
 
 
 if __name__ == "__main__":

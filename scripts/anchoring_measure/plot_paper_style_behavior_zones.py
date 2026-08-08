@@ -127,6 +127,16 @@ def transform_rows(
     mid_methods: List[str],
     mid_source: str,
 ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    # The final paper uses question-filtered lexical anchoring. Accept an
+    # already-normalized A_lex column for external inputs, but prefer A_lex_QF
+    # from the public metric pipeline when both are present.
+    normalized_rows: List[Dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        if item.get("A_lex_QF") not in {None, ""}:
+            item["A_lex"] = item["A_lex_QF"]
+        normalized_rows.append(item)
+    rows = normalized_rows
     refs = {
         "A_prob": metric_display_reference(rows, "A_prob", mid_methods, mid_source),
         "A_lex": metric_display_reference(rows, "A_lex", mid_methods, mid_source),

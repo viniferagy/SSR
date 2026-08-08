@@ -39,28 +39,9 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 from rcot_prompt import (  # noqa: E402
     AUGSUP_PROMPT,
-    CV_SUP_PROMPT,
-    DL_SUP_PROMPT,
-    FS_SUP_PROMPT,
     NEU_PROMPT,
     PG_SUP_PROMPT,
     QA_SUP_PROMPT,
-    SSR_PLUS_STRUCT_BALANCED_DERIVATIONAL_R_PROMPT,
-    SSR_PLUS_PROMPT,
-    SSR_PLUS_STRUCT_C1_STEPS_PROMPT,
-    SSR_PLUS_STRUCT_C2_COMPACT_PROMPT,
-    SSR_PLUS_STRUCT_C3_EXACT2_PROMPT,
-    SSR_PLUS_STRUCT_C4_BLANKLINE_PROMPT,
-    SSR_PLUS_STRUCT_C5_SEPARATE_RULE_PROMPT,
-    SSR_PLUS_STRUCT_C6_LONG_STEPS_PROMPT,
-    SSR_PLUS_STRUCT_C7_DEVELOPED_PROMPT,
-    SSR_PLUS_STRUCT_C8_LONG_REASON_PROMPT,
-    SSR_PLUS_STRUCT_C9_LONG_TEMPLATE_PROMPT,
-    SSR_PLUS_STRUCT_COMPACT_PROMPT,
-    SSR_PLUS_STRUCT_LONG_PROMPT,
-    SSR_PLUS_STRUCT_MID_PROMPT,
-    SSR_PLUS_STRUCT_PROMPT,
-    SSR_PLUS_STRUCT_STEPS_ONLY_PROMPT,
     SSR_PROMPT,
     SUP_PROMPT,
 )
@@ -92,28 +73,9 @@ PROMPTS = {
     "NEU": NEU_PROMPT,
     "SUP": SUP_PROMPT,
     "AUG-SUP": AUGSUP_PROMPT,
-    "CV-SUP": CV_SUP_PROMPT,
-    "DL-SUP": DL_SUP_PROMPT,
-    "FS-SUP": FS_SUP_PROMPT,
     "QA-SUP": QA_SUP_PROMPT,
     "PG-SUP": PG_SUP_PROMPT,
-    # Paper-facing SSR now denotes the final derivational structured variant.
-    "SSR": SSR_PLUS_STRUCT_BALANCED_DERIVATIONAL_R_PROMPT,
-    "SSR_PLUS": SSR_PLUS_PROMPT,
-    "SSR_PLUS_STRUCT": SSR_PLUS_STRUCT_PROMPT,
-    "SSR_PLUS_STRUCT_COMPACT": SSR_PLUS_STRUCT_COMPACT_PROMPT,
-    "SSR_PLUS_STRUCT_C1_STEPS": SSR_PLUS_STRUCT_C1_STEPS_PROMPT,
-    "SSR_PLUS_STRUCT_C2_COMPACT": SSR_PLUS_STRUCT_C2_COMPACT_PROMPT,
-    "SSR_PLUS_STRUCT_C3_EXACT2": SSR_PLUS_STRUCT_C3_EXACT2_PROMPT,
-    "SSR_PLUS_STRUCT_C4_BLANKLINE": SSR_PLUS_STRUCT_C4_BLANKLINE_PROMPT,
-    "SSR_PLUS_STRUCT_C5_SEPARATE_RULE": SSR_PLUS_STRUCT_C5_SEPARATE_RULE_PROMPT,
-    "SSR_PLUS_STRUCT_C6_LONG_STEPS": SSR_PLUS_STRUCT_C6_LONG_STEPS_PROMPT,
-    "SSR_PLUS_STRUCT_C7_DEVELOPED": SSR_PLUS_STRUCT_C7_DEVELOPED_PROMPT,
-    "SSR_PLUS_STRUCT_C8_LONG_REASON": SSR_PLUS_STRUCT_C8_LONG_REASON_PROMPT,
-    "SSR_PLUS_STRUCT_C9_LONG_TEMPLATE": SSR_PLUS_STRUCT_C9_LONG_TEMPLATE_PROMPT,
-    "SSR_PLUS_STRUCT_LONG": SSR_PLUS_STRUCT_LONG_PROMPT,
-    "SSR_PLUS_STRUCT_MID": SSR_PLUS_STRUCT_MID_PROMPT,
-    "SSR_PLUS_STRUCT_STEPS_ONLY": SSR_PLUS_STRUCT_STEPS_ONLY_PROMPT,
+    "SSR": SSR_PROMPT,
 }
 
 BLIND_SYSTEM = (
@@ -1181,7 +1143,7 @@ def main() -> None:
     p.add_argument("--raw-output", type=Path, required=True)
     p.add_argument("--unsupported-output", type=Path)
     p.add_argument("--summary-output", type=Path)
-    p.add_argument("--model", type=Path, default=Path("/home/pengguangyue/workspace/models/Qwen/Qwen3-8B"))
+    p.add_argument("--model", type=Path, required=True)
     p.add_argument("--methods", required=True)
     p.add_argument("--limit", type=int)
     p.add_argument("--k", type=int, default=5)
@@ -1220,7 +1182,7 @@ def main() -> None:
     p = sub.add_parser("score")
     p.add_argument("--input", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, required=True)
-    p.add_argument("--embedding-model", type=Path, default=Path("/home/pengguangyue/workspace/models/xlm-roberta-large"))
+    p.add_argument("--embedding-model", type=Path, required=True)
     p.add_argument("--device", default="")
     p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--max-length", type=int, default=512)

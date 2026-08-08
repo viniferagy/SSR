@@ -492,7 +492,7 @@ def main() -> None:
     p_score = sub.add_parser("score")
     p_score.add_argument("--input", type=Path, required=True)
     p_score.add_argument("--output-dir", type=Path, required=True)
-    p_score.add_argument("--scoring-model", type=Path, default=Path("/home/pengguangyue/workspace/models/Qwen/Qwen3-8B"))
+    p_score.add_argument("--scoring-model", type=Path, required=True)
     p_score.add_argument("--methods", default="NEU,SUP,AUG-SUP,SSR")
     p_score.add_argument("--fractions", default="0.10,0.25,0.50,0.75,0.90,1.00")
     p_score.add_argument("--start-index", type=int, default=0, help="Start row offset for resumable chunk scoring; sample_idx keeps this global offset.")

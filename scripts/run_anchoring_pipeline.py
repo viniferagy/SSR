@@ -1,202 +1,255 @@
 #!/usr/bin/env python3
-"""Run the SSR anchoring-analysis pipeline.
-
-This wrapper provides a CLI around data preparation, metric computation,
-anchoring figures and tables, and report metadata.
-"""
+"""Run the final SSR anchoring metrics and behavioral-zone analysis."""
 
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS_DIR = ROOT / "scripts"
-PREPARE_SCRIPT = SCRIPTS_DIR / "prepare_anchoring_input.py"
+SCRIPTS = ROOT / "scripts"
+PREPARE = SCRIPTS / "prepare_anchoring_input.py"
+PROB_TRAJ = SCRIPTS / "anchoring_measure" / "prob_lex_traj_metrics.py"
+TRAJ = SCRIPTS / "anchoring_measure" / "commitment_kl.py"
+CONTROLS = SCRIPTS / "anchoring_measure" / "build_controlled_traj_anchors.py"
+PLOT = SCRIPTS / "anchoring_measure" / "plot_paper_style_behavior_zones.py"
+REPORT = SCRIPTS / "report_anchoring_results.py"
 
-METHOD_ORDER = ["NEU", "SUP", "AUG-SUP", "SSR"]
-CONTROL_ORDER = ["Real CoT", "+Prob Anchor", "+Entropy Anchor", "Response as CoT"]
-
-def run(cmd: List[str], *, cwd: Path | None = None, env: Dict[str, str] | None = None) -> None:
-    print("+ " + " ".join(cmd), flush=True)
-    subprocess.run(cmd, cwd=str(cwd or ROOT), env=env, check=True)
-
-
-def read_metrics(path_or_dir: Path) -> List[Dict[str, Any]]:
-    files = [path_or_dir] if path_or_dir.is_file() else sorted(path_or_dir.glob("metrics_rank*.jsonl"))
-    if not files and path_or_dir.is_dir():
-        files = sorted(path_or_dir.glob("*.jsonl"))
-    records: List[Dict[str, object]] = []
-    for path in files:
-        with path.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    records.append(json.loads(line))
-    if not records:
-        raise FileNotFoundError(f"No metric records found under {path_or_dir}")
-    return records
-
-def metric_files_complete(output_dir: Path, expected_methods: List[str]) -> bool:
-    try:
-        records = read_metrics(output_dir)
-    except FileNotFoundError:
-        return False
-    seen = {r.get("method") for r in records}
-    return set(expected_methods).issubset(seen)
+DEFAULT_METHODS = ["NEU", "SUP", "AUG-SUP", "SSR"]
+CONTROL_METHODS = ["Blind CoT", "+Prob Anchor", "+Traj Anchor", "Response-as-CoT"]
 
 
-def run_metrics(args: argparse.Namespace, metric_input: Path, output_dir: Path, methods: List[str]) -> None:
-    if args.skip_metrics:
-        if not metric_files_complete(output_dir, methods):
-            raise FileNotFoundError(f"--skip-metrics requested but {output_dir} is incomplete")
-        return
-    if output_dir.exists() and not args.force:
-        if metric_files_complete(output_dir, methods):
-            print(f"[reuse] metrics already exist: {output_dir}")
-            return
-        raise FileExistsError(f"Output dir exists but is incomplete: {output_dir}; pass --force to overwrite")
-    if output_dir.exists():
-        shutil.rmtree(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+def run(command: list[str], *, env: dict[str, str] | None = None) -> None:
+    print("+ " + " ".join(command), flush=True)
+    subprocess.run(command, cwd=ROOT, env=env, check=True)
 
-    cmd = [
-        str(args.python),
-        "-m",
-        "anchoring_measure.metrics",
-        "--input",
-        str(metric_input),
-        "--scoring-model",
-        str(args.model),
-        "--output-dir",
-        str(output_dir),
+
+def distributed_command(python: Path, nproc: int, script: Path, arguments: list[str]) -> list[str]:
+    if nproc <= 1:
+        return [str(python), str(script), *arguments]
+    torchrun = python.parent / "torchrun"
+    if not torchrun.exists():
+        raise FileNotFoundError(f"torchrun not found next to Python interpreter: {torchrun}")
+    return [
+        str(torchrun),
+        "--standalone",
+        f"--nproc_per_node={nproc}",
+        str(script),
+        *arguments,
     ]
-    if args.disable_shared_prefix_past:
-        cmd.append("--disable-shared-prefix-past")
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(SCRIPTS_DIR) + os.pathsep + env.get("PYTHONPATH", "")
-    env.setdefault("MPLCONFIGDIR", str(ROOT / ".matplotlib-cache"))
-    if args.torchrun_nproc > 1:
-        torchrun = Path(args.python).parent / "torchrun"
-        cmd = [
-            str(torchrun),
-            "--standalone",
-            f"--nproc_per_node={args.torchrun_nproc}",
-            "-m",
-            "anchoring_measure.metrics",
-            "--input",
-            str(metric_input),
-            "--scoring-model",
-            str(args.model),
-            "--output-dir",
-            str(output_dir),
-        ]
-        if args.disable_shared_prefix_past:
-            cmd.append("--disable-shared-prefix-past")
-    if args.run_and_hold:
-        cmd = ["bash", str(args.run_and_hold), args.gpus, *cmd]
-    run(cmd, cwd=ROOT, env=env)
 
 
-def plot_results(args: argparse.Namespace, metrics_dir: Path, output_dir: Path, prefix: str) -> None:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        str(args.python),
-        "-m",
-        "anchoring_measure.plot",
-        "--metrics",
-        str(metrics_dir),
-        "--out-dir",
-        str(output_dir),
-        "--prefix",
-        prefix,
-    ]
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(SCRIPTS_DIR) + os.pathsep + env.get("PYTHONPATH", "")
-    env.setdefault("MPLCONFIGDIR", str(ROOT / ".matplotlib-cache"))
-    run(cmd, cwd=ROOT, env=env)
-
-
-def prepare_inputs(args: argparse.Namespace, run_dir: Path) -> tuple[Path, Path]:
-    metric_input = run_dir / "inputs" / "example.metric.jsonl"
-    controlled_input = run_dir / "inputs" / "controlled_reference.metric.jsonl"
-    methods = ",".join(METHOD_ORDER)
-    if args.force or not metric_input.exists():
-        run([
-            str(args.python),
-            str(PREPARE_SCRIPT),
+def validate_input(python: Path, source: Path, output: Path, methods: list[str]) -> None:
+    run(
+        [
+            str(python),
+            str(PREPARE),
             "validate",
             "--input",
-            str(args.input),
+            str(source),
             "--output",
-            str(metric_input),
+            str(output),
             "--methods",
-            methods,
+            ",".join(methods),
             "--strict",
-        ])
-    if args.force or not controlled_input.exists():
-        run([
+        ]
+    )
+
+
+def score_group(
+    args: argparse.Namespace,
+    input_path: Path,
+    methods: list[str],
+    group: str,
+) -> Path:
+    group_dir = args.run_dir / "metrics" / group
+    prob_dir = group_dir / "prob"
+    traj_dir = group_dir / "traj"
+    result_dir = args.run_dir / "results" / group
+    prob_dir.mkdir(parents=True, exist_ok=True)
+    traj_dir.mkdir(parents=True, exist_ok=True)
+    result_dir.mkdir(parents=True, exist_ok=True)
+    methods_csv = ",".join(methods)
+
+    run(
+        distributed_command(
+            args.python,
+            args.torchrun_nproc,
+            PROB_TRAJ,
+            [
+                "score-prob",
+                "--input",
+                str(input_path),
+                "--scoring-model",
+                str(args.model),
+                "--output-dir",
+                str(prob_dir),
+                "--methods",
+                methods_csv,
+            ],
+        )
+    )
+    run(
+        distributed_command(
+            args.python,
+            args.torchrun_nproc,
+            TRAJ,
+            [
+                "score",
+                "--input",
+                str(input_path),
+                "--scoring-model",
+                str(args.model),
+                "--output-dir",
+                str(traj_dir),
+                "--methods",
+                methods_csv,
+            ],
+        )
+    )
+    run(
+        [
             str(args.python),
-            str(PREPARE_SCRIPT),
-            "controlled-reference",
+            str(PROB_TRAJ),
+            "aggregate",
             "--input",
-            str(metric_input),
-            "--output",
-            str(controlled_input),
-            "--base-method",
-            args.control_base_method,
-        ])
-    return metric_input, controlled_input
+            str(input_path),
+            "--prob-metrics",
+            str(prob_dir),
+            "--traj-metrics",
+            str(traj_dir),
+            "--output-dir",
+            str(result_dir),
+            "--methods",
+            methods_csv,
+        ]
+    )
+    return result_dir / "anchoring_metrics_per_record.csv"
+
+
+def merge_csv(inputs: list[Path], output: Path) -> None:
+    rows: list[dict[str, Any]] = []
+    fieldnames: list[str] = []
+    for path in inputs:
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            for field in reader.fieldnames or []:
+                if field not in fieldnames:
+                    fieldnames.append(field)
+            rows.extend(reader)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def prepare_run_dir(run_dir: Path, force: bool) -> None:
+    if run_dir.exists() and any(run_dir.iterdir()):
+        if not force:
+            raise FileExistsError(f"Run directory is not empty: {run_dir}; pass --force to replace it")
+        shutil.rmtree(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, default=SCRIPTS_DIR / "examples" / "examples.jsonl")
-    parser.add_argument("--model", type=Path, default=Path("/path/to/Qwen3-8B"))
-    parser.add_argument("--run-dir", type=Path, default=ROOT / "runs" / "anchoring_example")
-    parser.add_argument("--python", type=Path, default=ROOT / "venv" / "bin" / "python")
-    parser.add_argument("--torchrun-nproc", type=int, default=4)
-    parser.add_argument("--run-and-hold", type=Path, default=None)
-    parser.add_argument("--gpus", default="0,1,2,3")
-    parser.add_argument("--control-base-method", default="NEU")
-    parser.add_argument("--skip-metrics", action="store_true")
-    parser.add_argument("--skip-controlled-metrics", action="store_true")
-    parser.add_argument("--disable-shared-prefix-past", action="store_true")
+    parser.add_argument("--input", type=Path, required=True, help="Metric-format main-method JSONL")
+    parser.add_argument("--blind-input", type=Path, help="Independent question-only traces for controlled zones")
+    parser.add_argument("--blind-method", default="Blind CoT")
+    parser.add_argument("--methods", default=",".join(DEFAULT_METHODS))
+    parser.add_argument("--model", type=Path, help="Local scorer checkpoint (required unless --dry-run)")
+    parser.add_argument("--run-dir", type=Path, default=ROOT / "runs" / "anchoring")
+    parser.add_argument("--python", type=Path, default=Path(sys.executable))
+    parser.add_argument("--torchrun-nproc", type=int, default=1)
+    parser.add_argument("--dry-run", action="store_true", help="Validate inputs and build controls without model scoring")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
-    run_dir = args.run_dir.resolve()
-    metric_input, controlled_input = prepare_inputs(args, run_dir)
+    args.run_dir = args.run_dir.resolve()
+    args.python = args.python.resolve()
+    methods = [item.strip() for item in args.methods.split(",") if item.strip()]
+    if not methods:
+        parser.error("--methods must contain at least one method")
+    if args.torchrun_nproc < 1:
+        parser.error("--torchrun-nproc must be positive")
+    if not args.dry_run and args.model is None:
+        parser.error("--model is required unless --dry-run is set")
 
-    method_metrics_dir = run_dir / "metrics" / "methods"
-    control_metrics_dir = run_dir / "metrics" / "controlled"
+    prepare_run_dir(args.run_dir, args.force)
+    inputs_dir = args.run_dir / "inputs"
+    inputs_dir.mkdir(parents=True, exist_ok=True)
+    method_input = inputs_dir / "methods.metric.jsonl"
+    validate_input(args.python, args.input.resolve(), method_input, methods)
 
-    run_metrics(args, metric_input, method_metrics_dir, METHOD_ORDER)
-    plot_results(args, method_metrics_dir, run_dir / "figures" / "methods", "methods")
-
-    if not args.skip_controlled_metrics:
-        control_args = argparse.Namespace(**vars(args))
-        control_args.skip_metrics = False
-        run_metrics(control_args, controlled_input, control_metrics_dir, CONTROL_ORDER)
-        plot_results(args, control_metrics_dir, run_dir / "figures" / "controlled", "controlled")
+    controlled_input: Path | None = None
+    if args.blind_input:
+        blind_validated = inputs_dir / "blind.metric.jsonl"
+        validate_input(args.python, args.blind_input.resolve(), blind_validated, [args.blind_method])
+        controlled_input = inputs_dir / "controlled.metric.jsonl"
+        run(
+            [
+                str(args.python),
+                str(CONTROLS),
+                "--input",
+                str(blind_validated),
+                "--output",
+                str(controlled_input),
+                "--blind-method",
+                args.blind_method,
+            ]
+        )
 
     manifest = {
-        "input": str(args.input),
-        "model": str(args.model),
-        "run_dir": str(run_dir),
-        "python": str(args.python),
-        "method_metrics": str(method_metrics_dir),
-        "controlled_metrics": str(control_metrics_dir),
+        "input": str(args.input.resolve()),
+        "blind_input": str(args.blind_input.resolve()) if args.blind_input else None,
+        "methods": methods,
+        "model": str(args.model.resolve()) if args.model else None,
+        "metric_definitions": {
+            "A_lex": "question-filtered IDF-weighted answer-content recall",
+            "A_traj": "sampled-prefix next-token entropy reduction from answer visibility",
+            "A_prob": "clipped normalized answer-surprisal reduction",
+        },
     }
-    (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(json.dumps(manifest, indent=2, ensure_ascii=False))
+    if args.dry_run:
+        (args.run_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        print(json.dumps({**manifest, "dry_run": True}, indent=2))
+        return
+
+    env = os.environ.copy()
+    env.setdefault("MPLCONFIGDIR", str(ROOT / ".matplotlib-cache"))
+    method_csv = score_group(args, method_input, methods, "methods")
+    if controlled_input is not None:
+        controlled_csv = score_group(args, controlled_input, CONTROL_METHODS, "controlled")
+        combined_csv = args.run_dir / "results" / "all_metrics_per_record.csv"
+        merge_csv([method_csv, controlled_csv], combined_csv)
+        run(
+            [
+                str(args.python),
+                str(PLOT),
+                "--csv",
+                str(combined_csv),
+                "--out-dir",
+                str(args.run_dir / "figures"),
+                "--prefix",
+                "behavioral_zones",
+            ],
+            env=env,
+        )
+        manifest["behavioral_zones"] = str(args.run_dir / "figures")
+    else:
+        manifest["behavioral_zones"] = "skipped: provide --blind-input"
+
+    (args.run_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    run([str(args.python), str(REPORT), "--run-dir", str(args.run_dir)])
 
 
 if __name__ == "__main__":

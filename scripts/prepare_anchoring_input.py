@@ -11,15 +11,13 @@ This script keeps the metric input contract explicit:
   "reasonings": {"NEU": "...", ...}
 }
 
-It can also convert SSR-RCoT rows into an SSR-only metric input, and build
-controlled-reference rows for stress-testing the anchoring metrics.
+It can also convert SSR-RCoT rows into an SSR-only metric input.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
@@ -151,61 +149,6 @@ def convert_ssr_rcot(args: argparse.Namespace) -> None:
     }, ensure_ascii=False, indent=2))
 
 
-STOPWORD_RE = re.compile(
-    r"\b(?:a|an|the|and|or|but|if|then|so|to|of|in|on|for|with|as|by|is|are|"
-    r"was|were|be|been|being|it|this|that|these|those|from|at|into|about)\b",
-    flags=re.IGNORECASE,
-)
-
-
-def function_word_skeleton(text: str) -> str:
-    words = STOPWORD_RE.findall(text)
-    if not words:
-        words = re.findall(r"\w+", text)[:20]
-    if not words:
-        return text[:200]
-    chunks = [" ".join(words[i:i + 16]) for i in range(0, len(words), 16)]
-    return "\n\n".join(chunks[:8])
-
-
-def build_controlled_reference(args: argparse.Namespace) -> None:
-    base_method = args.base_method
-    rows = []
-    for idx, row in enumerate(read_jsonl(args.input)):
-        questions = row.get("questions", {})
-        answers = row.get("answers", {})
-        contexts = row.get("contexts", {})
-        reasonings = row.get("reasonings", {})
-        q = ensure_text(questions.get(base_method))
-        a = ensure_text(answers.get(base_method))
-        c = ensure_text(contexts.get(base_method))
-        r = ensure_text(reasonings.get(base_method))
-        if not (q.strip() and a.strip() and r.strip()):
-            continue
-        methods = {
-            "Real CoT": r,
-            "+Prob Anchor": f"{r}\n\n{a}",
-            "+Entropy Anchor": function_word_skeleton(a),
-            "Response as CoT": a,
-        }
-        rows.append({
-            "id": row.get("id", idx),
-            "questions": {m: q for m in methods},
-            "answers": {m: a for m in methods},
-            "contexts": {m: c or q for m in methods},
-            "reasonings": methods,
-        })
-    written = write_jsonl(args.output, rows)
-    print(json.dumps({
-        "mode": "controlled-reference",
-        "input": str(args.input),
-        "output": str(args.output),
-        "base_method": base_method,
-        "written": written,
-        "note": "Controlled references are generated from available traces; Real CoT is approximated by the chosen base method.",
-    }, ensure_ascii=False, indent=2))
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -222,12 +165,6 @@ def main() -> None:
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--method", default="SSR")
     p.set_defaults(func=convert_ssr_rcot)
-
-    p = sub.add_parser("controlled-reference", help="Build controlled-reference metric input")
-    p.add_argument("--input", type=Path, required=True)
-    p.add_argument("--output", type=Path, required=True)
-    p.add_argument("--base-method", default="NEU")
-    p.set_defaults(func=build_controlled_reference)
 
     args = parser.parse_args()
     args.func(args)

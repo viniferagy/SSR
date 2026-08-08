@@ -38,6 +38,6 @@ zzz_final/
 # Pipeline outputs are generated locally and are not committed.
 runs/
 
-# Keep the bundled generated examples, ignore other local example dumps.
+# Keep the bundled synthetic format examples; ignore local example dumps.
 scripts/examples/*.jsonl
 !scripts/examples/examples.jsonl

@@ -1,70 +1,169 @@
-<h1 align="center">SSR: Measuring and Mitigating Post-hoc Rationalization in Reverse Chain-of-Thought Generation</h1>
+# SSR: Reverse Chain-of-Thought Anchoring
 
----
+Code for **Measuring and Mitigating Post-hoc Rationalization in Reverse
+Chain-of-Thought Generation**.
 
-<p align="center">
-<a href="https://arxiv.org/abs/2602.14469">Paper</a> |
-<a href="https://huggingface.co/datasets/Nanbeige/SSR-RCoT-16K">Dataset</a>
-</p>
+[Paper](https://arxiv.org/abs/2602.14469) | [SSR-RCoT-16K dataset](https://huggingface.co/datasets/Nanbeige/SSR-RCoT-16K)
 
-This repository contains the code release for **Measuring and Mitigating
-Post-hoc Rationalization in Reverse Chain-of-Thought Generation**.
+This release covers RCoT generation, the final three anchoring metrics,
+controlled references and behavioral zones, and the diagnostics used to audit
+those measurements. Generated traces, metric results, figures, paper sources,
+and model checkpoints are intentionally not tracked.
 
-Reverse Chain-of-Thought Generation (RCG) generates reasoning traces from
-question-answer pairs. Because the answer is visible during generation, the
-trace can become a post-hoc rationalization rather than a forward-usable
-reasoning path. This codebase provides:
+## Installation
 
-- RCoT generation prompts for NEU, SUP, AUG-SUP, and SSR.
-- Anchoring metrics for lexical, trajectory, and probabilistic answer
-  dependence.
-- Controlled-reference and behavioral-zone analysis utilities.
-- Diagnostic scripts for stress tests, ablations, and result auditing.
-
-Large generated outputs are written under `runs/`, which is intentionally
-ignored by git.
-
-## Environment Setup
-
-The project is tested with Python 3.11.
+Python 3.11 is supported.
 
 ```bash
-UV_CACHE_DIR=.uv-cache uv venv venv --python 3.11
-
-UV_CACHE_DIR=.uv-cache uv pip install --python venv/bin/python -e ".[generation]" \
-  --extra-index-url https://download.pytorch.org/whl/cu124 \
-  --index-strategy unsafe-best-match
+uv venv venv --python 3.11
+uv pip install --python venv/bin/python -e .
 ```
 
-For metric-only usage without vLLM generation, the base package dependencies in
-`pyproject.toml` are sufficient. Generation with `scripts/generate_vllm.py`
-requires the `generation` extra.
-
-## Data
-
-For a quick code-path check, use the included metric-format example file:
+Install optional dependencies only for the workflows that need them:
 
 ```bash
-scripts/examples/examples.jsonl
+# vLLM trace and baseline generation
+uv pip install --python venv/bin/python -e ".[generation]"
+
+# Embedding-based and lexical robustness diagnostics
+uv pip install --python venv/bin/python -e ".[diagnostics]"
 ```
 
-This file already contains generated NEU/SUP/AUG-SUP/SSR reasoning traces, so
-you can skip trace generation and run the anchoring pipeline directly.
+Use a PyTorch/vLLM build compatible with the local CUDA driver. All generation
+and scoring commands expect local or Hugging Face model identifiers supplied
+explicitly on the command line.
 
-For larger experiments, download the public SSR-RCoT-16K subset from Hugging
-Face:
+## Input Format
+
+The common JSONL format stores one row per example and one value per method in
+each section:
+
+```json
+{
+  "id": "example-id",
+  "questions": {"NEU": "...", "SUP": "...", "AUG-SUP": "...", "SSR": "..."},
+  "answers": {"NEU": "...", "SUP": "...", "AUG-SUP": "...", "SSR": "..."},
+  "contexts": {"NEU": "...", "SUP": "...", "AUG-SUP": "...", "SSR": "..."},
+  "reasonings": {"NEU": "...", "SUP": "...", "AUG-SUP": "...", "SSR": "..."}
+}
+```
+
+`contexts` contains the conversation shown to the reverse-CoT generator,
+normally including the final assistant answer. `questions` contains the
+question-only scoring context. Every requested method must be present and
+nonempty in all four sections.
+
+The bundled [examples.jsonl](scripts/examples/examples.jsonl) contains three
+small synthetic rows for format and parser checks. It is not an experimental
+result set.
+
+## Format Check
+
+The dry run validates the main methods, validates a genuine question-only
+`Blind CoT`, and mechanically constructs the four controlled references. It
+does not load a model or compute metrics.
 
 ```bash
-venv/bin/python - <<'PY'
-from datasets import load_dataset
-
-ds = load_dataset("Nanbeige/SSR-RCoT-16K")
-print(ds)
-PY
+venv/bin/python scripts/run_anchoring_pipeline.py \
+  --input scripts/examples/examples.jsonl \
+  --blind-input scripts/examples/examples.jsonl \
+  --blind-method "Blind CoT" \
+  --run-dir runs/example_dry_run \
+  --dry-run \
+  --force
 ```
 
-If you export dataset rows to JSONL, convert them to the metric input format
-with:
+## Generate Traces
+
+`SSR` maps to the final paper prompt. `SSR-SCHEMA` and `SSR-DENSE` are the
+structured-format ablations; dense paragraph numbering is removed during
+output parsing.
+
+```bash
+venv/bin/python scripts/generate_vllm.py \
+  --mode rcot \
+  --input path/to/input.metric.jsonl \
+  --output runs/main/inputs/methods.metric.jsonl \
+  --raw-output runs/main/generation/raw_outputs.jsonl \
+  --model /path/to/generator \
+  --methods NEU,SUP,AUG-SUP,SSR \
+  --tensor-parallel-size 4
+```
+
+Generate independent question-only traces for the controlled references:
+
+```bash
+venv/bin/python scripts/generate_vllm.py \
+  --mode r0 \
+  --input path/to/input.metric.jsonl \
+  --output runs/main/inputs/blind.metric.jsonl \
+  --raw-output runs/main/generation/blind_raw_outputs.jsonl \
+  --model /path/to/generator \
+  --method-name "Blind CoT" \
+  --tensor-parallel-size 4
+```
+
+The Blind CoT must be generated from the question alone. NEU is an
+answer-visible reverse-CoT baseline and must not be substituted for it.
+
+## Score Metrics
+
+Run all three metrics and the behavioral-zone analysis with one scorer:
+
+```bash
+venv/bin/python scripts/run_anchoring_pipeline.py \
+  --input runs/main/inputs/methods.metric.jsonl \
+  --blind-input runs/main/inputs/blind.metric.jsonl \
+  --blind-method "Blind CoT" \
+  --model /path/to/scoring-model \
+  --run-dir runs/main \
+  --python venv/bin/python \
+  --torchrun-nproc 4 \
+  --force
+```
+
+Omit `--blind-input` to score only the requested methods. In that case the
+pipeline skips controlled references and behavioral-zone plots. Outputs are
+written under the selected run directory:
+
+```text
+inputs/                         Validated method and controlled JSONL
+metrics/methods/                Per-rank probability and trajectory records
+metrics/controlled/             Per-rank controlled-reference records
+results/*/anchoring_metrics.*   Per-record and aggregate final metrics
+figures/behavioral_zones_*      Reference-normalized zone plots and summaries
+manifest.json                   Inputs, scorer, and metric definitions
+report.md                       Compact run report
+```
+
+## Final Metrics
+
+Aggregate tables report all three metrics on a 0-100 scale:
+
+- `A_lex = 100 * A_lex_QF`: IDF-weighted recall of answer content in the
+  reasoning after removing answer terms already present in the question.
+- `A_traj = 100 * ConfidenceGap_mean`: mean reduction in next-token entropy
+  when the answer is visible, evaluated at sampled prefixes of the observed
+  reasoning trace.
+- `A_prob`: 100 times the clipped fraction of baseline answer surprisal removed
+  after conditioning on the complete reasoning trace.
+
+The per-record CSV keeps lexical and probabilistic values in `[0, 1]`; aggregate
+tables multiply them by 100. `A_traj` is written in percentage-point units at
+both levels. `B_100` is the unnormalized answer bit gain multiplied by 100 and
+is retained as a robustness diagnostic.
+
+The controlled set contains:
+
+- `Blind CoT`: independently generated from the question only.
+- `+Prob Anchor`: Blind CoT plus neutral padding and unordered answer terms.
+- `+Traj Anchor`: a mechanically rendered answer prefix that preserves
+  structure while sparsely copying content words.
+- `Response-as-CoT`: the reference answer used directly as the trace.
+
+## Dataset Conversion
+
+Convert downloaded SSR-RCoT rows into the common format:
 
 ```bash
 venv/bin/python scripts/prepare_anchoring_input.py convert-ssr-rcot \
@@ -73,136 +172,40 @@ venv/bin/python scripts/prepare_anchoring_input.py convert-ssr-rcot \
   --method SSR
 ```
 
-## Quick Start
+## Scripts
 
-Run the anchoring pipeline on the bundled examples:
-
-```bash
-venv/bin/python scripts/run_anchoring_pipeline.py \
-  --input scripts/examples/examples.jsonl \
-  --run-dir runs/rcot_example \
-  --model /path/to/local/model \
-  --python venv/bin/python \
-  --torchrun-nproc 4 \
-  --force
-```
-
-Build a human-readable report:
-
-```bash
-venv/bin/python scripts/report_anchoring_results.py \
-  --run-dir runs/rcot_example
-```
-
-The selected `--run-dir` will contain metric tables, behavioral-zone summaries,
-plots, and `report.md`.
-
-## Generate New RCoT Traces
-
-Use `scripts/generate_vllm.py` when you want to regenerate traces from a
-metric-format input file.
-
-```bash
-venv/bin/python scripts/generate_vllm.py \
-  --mode rcot \
-  --input path/to/input.metric.jsonl \
-  --output runs/rcot_example/inputs/generated.metric.jsonl \
-  --raw-output runs/rcot_example/generation/raw_outputs.jsonl \
-  --model /path/to/local/model \
-  --methods NEU,SUP,AUG-SUP,SSR \
-  --tensor-parallel-size 4
-```
-
-Then score the generated traces:
-
-```bash
-venv/bin/python scripts/run_anchoring_pipeline.py \
-  --input runs/rcot_example/inputs/generated.metric.jsonl \
-  --run-dir runs/rcot_example \
-  --model /path/to/local/model \
-  --python venv/bin/python \
-  --torchrun-nproc 4 \
-  --force
-```
-
-## Input Format
-
-Metric-format JSONL files contain one row per example. The pipeline expects a
-question, answer, and method-indexed reasoning traces.
-
-```json
-{
-  "id": "example-id",
-  "question": "User question",
-  "answer": "Reference answer",
-  "reasonings": {
-    "NEU": "reasoning trace",
-    "SUP": "reasoning trace",
-    "AUG-SUP": "reasoning trace",
-    "SSR": "reasoning trace"
-  }
-}
-```
-
-`scripts/generate_vllm.py` writes this format when run in `--mode rcot`.
-
-## Metrics
-
-The main pipeline computes three levels of answer anchoring:
-
-- `A_lex`: question-filtered lexical overlap between answer content and the
-  reasoning trace.
-- `A_traj`: answer-conditioned trajectory dependence, estimated from the
-  next-token entropy gap with and without answer visibility.
-- `A_prob`: endpoint recoverability, measuring how much the reasoning trace
-  reduces answer surprisal under a scoring model.
-
-The behavioral-zone utilities summarize how examples distribute across
-Reason, Encode, Monitor, and Copy regions in the trajectory-probabilistic
-anchoring plane.
-
-## Useful Scripts
-
-- `scripts/generate_vllm.py`: generate RCoT or answer-blind traces with vLLM.
-- `scripts/run_anchoring_pipeline.py`: run metric scoring, controlled
-  references, tables, plots, and report metadata.
-- `scripts/report_anchoring_results.py`: assemble a markdown report from a run
-  directory.
-- `scripts/prepare_anchoring_input.py`: validate, convert, or build metric
-  input files.
-- `scripts/anchoring_measure/prob_lex_traj_metrics.py`: core lexical,
-  trajectory, and probabilistic metric computation.
-- `scripts/anchoring_measure/plot_paper_style_behavior_zones.py`: behavioral
-  zone plotting.
+- `scripts/rcot_generation/rcot_prompt.py`: public NEU, SUP, AUG-SUP, SSR,
+  schema, dense, and suppression-control prompts.
+- `scripts/generate_vllm.py`: answer-visible RCoT and question-only Blind CoT
+  generation.
+- `scripts/run_anchoring_pipeline.py`: validated end-to-end three-metric run.
+- `scripts/anchoring_measure/prob_lex_traj_metrics.py`: final `A_lex` and
+  `A_prob` scoring plus three-metric aggregation.
+- `scripts/anchoring_measure/commitment_kl.py`: per-prefix trajectory
+  sensitivity used for final `A_traj`.
 - `scripts/anchoring_measure/build_controlled_traj_anchors.py`: controlled
-  anchor construction.
-- `scripts/analyze_answer_swap_sensitivity.py`: answer-swap sensitivity
-  diagnostic.
-- `scripts/diagnose_candidate_quality_slices.py`: quality slice diagnostics
-  such as language matching and simple-task overreasoning.
+  reference construction.
+- `scripts/anchoring_measure/plot_paper_style_behavior_zones.py`: behavioral
+  zone transformation and plotting.
+- `scripts/baseline_tier1.py`: FDB, Gist, NGramBlock, and Best-of-N baselines,
+  selection, merge, and endpoint evaluation.
+- `scripts/anchoring_measure/prefix_curve.py`, `path_diversity.py`,
+  `length_effect_diagnostics.py`, and `scripts/analyze_answer_swap_sensitivity.py`:
+  paper robustness diagnostics.
 
-Additional baseline-generation scripts are provided under
-`insights/baselines-code/`.
+`insights/baselines-code/` retains the separate reference implementations for
+the contrastive and Tier-1 baseline ablations.
 
-## Repository Layout
+## Release Scope
 
-```text
-scripts/
-  anchoring_measure/      Metric, plotting, and diagnostic utilities.
-  rcot_generation/        Prompt templates for RCoT generation.
-  examples/               Small metric-format example input.
-insights/baselines-code/  Baseline generation helpers.
-runs/                     Local experiment outputs; ignored by git.
-```
+This code-only release reproduces RCoT generation and anchoring analysis from
+prepared question-answer data. The SSR-D training pipeline, downstream
+benchmark harnesses, external LLM-as-judge service integration, paper sources,
+and reported result files are outside this repository. Their absence is
+intentional; the repository does not fabricate substitute implementations or
+embed unpublished outputs.
 
-## Notes
-
-- Use local model checkpoints for generation and scoring.
-- Keep generated outputs under `runs/` or another ignored directory.
-- For large runs, use `--torchrun-nproc` to match the number of available
-  scoring GPUs.
-- The same metric-format JSONL can be passed through custom generation methods
-  as long as method names are stored under `reasonings`.
+Keep local outputs under `runs/`, which is ignored by Git.
 
 ## Citation
 

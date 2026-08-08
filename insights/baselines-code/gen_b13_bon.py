@@ -6,11 +6,11 @@ B13. Best-of-N + 锚定拒绝采样 —— 回答"指标本身够不够当选择
   1) gen    : NEU 采 N 条/query（vLLM, logprobs=20），候选展平成 jsonl
   2)         python metrics_anchoring.py --in cands.jsonl --out cands_scored.jsonl \
                  --scorer-model <目标模型>          # 未改分布，无需 rescore
-  3) judge  : 质量门控 judge（235B），写入 quality_score / endpoint_consistent
+  3) judge  : 质量门控 judge（235B），写入 quality_score / consistent
   4) select : 三种规则各出一份选中集
        rule_prob   : min a_prob
        rule_combo  : min [0.5·mm(a_prob) + 0.5·mm(a_ent)]（mm = 组内 minmax）
-       rule_gated  : quality_score ≥ 阈值 且 endpoint_consistent 的子集内跑 combo，
+       rule_gated  : quality_score ≥ 阈值 且 consistent 的子集内跑 combo，
                      全军覆没则回退组内最高 quality（防"低锚定的烂 trace"）
 
 解读锚点：BoN-8 给出"采样分布内"的改善下限；SSR 若显著超过 → SSR 改变了
@@ -81,11 +81,11 @@ def cmd_judge(args):
     n_fail = 0
     for r, p in zip(recs, parsed):
         if p is None:
-            r["quality_score"], r["endpoint_consistent"] = None, None
+            r["quality_score"], r["consistent"] = None, None
             n_fail += 1
         else:
             r["quality_score"] = p.get("score")
-            r["endpoint_consistent"] = bool(p.get("endpoint_consistent"))
+            r["consistent"] = bool(p.get("consistent"))
     save_jsonl(recs, args.out)
     print(f"judge done -> {args.out} | unparsable: {n_fail}/{len(recs)}")
 
@@ -127,7 +127,7 @@ def cmd_select(args):
 
         gated = [c for c in cs
                  if (c.get("quality_score") or 0) >= args.quality_th
-                 and c.get("endpoint_consistent")]
+                 and c.get("consistent")]
         out["rule_gated"].append(
             min(gated, key=lambda c: c["combo_score"]) if gated
             else max(cs, key=lambda c: c.get("quality_score") or 0))
