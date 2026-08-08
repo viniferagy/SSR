@@ -53,11 +53,9 @@ from baseline_tier1 import (  # noqa: E402
     GIST_P2_SYSTEM,
     GIST_P2_USER,
     banned_ngram_strings,
-    gamma_at,
     parse_bridge as tier_parse_bridge,
     parse_gist as tier_parse_gist,
     parse_reason as tier_parse_reason,
-    sample_top_p,
 )
 from anchoring_measure import reviewer_protocol as reviewer_metrics  # noqa: E402
 from two_step_ssr_vllm import (  # noqa: E402
@@ -209,7 +207,6 @@ TWO_STEP_METHODS = {
 }
 TIER1_METHODS = {"A1-FDB", "A6-Gist", "B11-NGramBlock"}
 B13_METHOD = "B13-BoN"
-B12_METHODS = {"B12-Contrastive-g0.5"}
 
 
 def build_requests(
@@ -238,7 +235,7 @@ def build_requests(
                 continue
             if not include_answer_conditioned:
                 continue
-            if method in TWO_STEP_METHODS or method in TIER1_METHODS or method == B13_METHOD or method in B12_METHODS:
+            if method in TWO_STEP_METHODS or method in TIER1_METHODS or method == B13_METHOD:
                 continue
             if method not in PROMPTS:
                 unsupported.append({"row_idx": row_idx, "method": method, "reason": "unsupported_exact_generator"})
@@ -659,136 +656,6 @@ def select_b13_bon_samples(
         torch.cuda.empty_cache()
 
 
-def b12_gamma(method: str, default: float) -> float:
-    match = re.search(r"-g([0-9.]+)$", method)
-    return float(match.group(1)) if match else default
-
-
-def hf_encode(tokenizer: Any, prompts: List[str], device: Any, max_prompt_tokens: int) -> Any:
-    return tokenizer(prompts, return_tensors="pt", padding=True, truncation=True, max_length=max_prompt_tokens).to(device)
-
-
-def prefill_contrastive(model: Any, tokenizer: Any, prompts: List[str], device: Any, max_prompt_tokens: int) -> Tuple[Any, Any, Any, Any]:
-    enc = hf_encode(tokenizer, prompts, device, max_prompt_tokens)
-    pos = (enc.attention_mask.cumsum(-1) - 1).clamp(min=0)
-    with reviewer_metrics.torch.inference_mode():
-        out = model(input_ids=enc.input_ids, attention_mask=enc.attention_mask, position_ids=pos, use_cache=True)
-    counts = enc.attention_mask.sum(-1)
-    return out.logits[:, -1, :], out.past_key_values, enc.attention_mask, counts
-
-
-def generate_b12_batch(model: Any, tokenizer: Any, batch: Sequence[Tuple[int, Dict[str, Any], str, int]], args: argparse.Namespace, device: Any) -> List[Dict[str, Any]]:
-    import torch
-
-    with_prompts: List[str] = []
-    without_prompts: List[str] = []
-    for _row_idx, row, method, _cand_idx in batch:
-        with_prompts.append(apply_chat_template(tokenizer, PROMPTS["NEU"], prompt_context(row, method)))
-        without_prompts.append(apply_chat_template(tokenizer, PROMPTS["NEU"], row_question(row, method)))
-
-    logits_w, cache_w, mask_w, count_w = prefill_contrastive(model, tokenizer, with_prompts, device, args.b12_max_prompt_tokens)
-    logits_o, cache_o, mask_o, count_o = prefill_contrastive(model, tokenizer, without_prompts, device, args.b12_max_prompt_tokens)
-    logits_w = logits_w.to(device)
-    logits_o = logits_o.to(device)
-
-    eos = tokenizer.eos_token_id
-    eos_ids = set(eos) if isinstance(eos, (list, tuple)) else {eos}
-    batch_size = len(batch)
-    done = torch.zeros(batch_size, dtype=torch.bool, device=device)
-    generated: List[List[int]] = [[] for _ in range(batch_size)]
-
-    with torch.inference_mode():
-        for step in range(args.b12_max_new_tokens):
-            gamma = b12_gamma(batch[0][2], args.b12_gamma)
-            gamma = gamma_at(step, gamma, args.b12_max_new_tokens, args.b12_anneal_frac)
-            logits = logits_o + gamma * (logits_w - logits_o)
-            next_ids = sample_top_p(logits, args.temperature, args.top_p)
-            next_ids = torch.where(done, torch.full_like(next_ids, tokenizer.pad_token_id), next_ids)
-            for i in range(batch_size):
-                if not bool(done[i]):
-                    generated[i].append(int(next_ids[i]))
-            just_done = torch.tensor([int(next_ids[i]) in eos_ids for i in range(batch_size)], device=device)
-            done = done | just_done
-            if bool(done.all()):
-                break
-
-            step_mask = (~done).long().unsqueeze(1)
-            ids_step = next_ids.unsqueeze(1)
-            mask_w = torch.cat([mask_w, step_mask], dim=1)
-            mask_o = torch.cat([mask_o, step_mask], dim=1)
-            out_w = model(input_ids=ids_step, attention_mask=mask_w, position_ids=count_w.unsqueeze(1), past_key_values=cache_w, use_cache=True)
-            out_o = model(input_ids=ids_step, attention_mask=mask_o, position_ids=count_o.unsqueeze(1), past_key_values=cache_o, use_cache=True)
-            logits_w, logits_o = out_w.logits[:, -1, :].to(device), out_o.logits[:, -1, :].to(device)
-            cache_w, cache_o = out_w.past_key_values, out_o.past_key_values
-            count_w = count_w + step_mask.squeeze(1)
-            count_o = count_o + step_mask.squeeze(1)
-
-    out_rows: List[Dict[str, Any]] = []
-    for (row_idx, row, method, cand_idx), ids in zip(batch, generated):
-        ids = [x for x in ids if x not in eos_ids and x != tokenizer.pad_token_id]
-        raw_text = tokenizer.decode(ids, skip_special_tokens=True)
-        out_rows.append(
-            {
-                "row_idx": row_idx,
-                "id": row.get("id", row_idx),
-                "method": method,
-                "condition": "answer_conditioned",
-                "candidate_idx": cand_idx,
-                "raw_output": tier_parse_reason(raw_text),
-                "finish_reason": "contrastive",
-                "output_tokens": len(ids),
-                "contrastive": {"gamma": b12_gamma(method, args.b12_gamma), "anneal_frac": args.b12_anneal_frac},
-            }
-        )
-    return out_rows
-
-
-def generate_b12_samples(
-    rows: Sequence[Dict[str, Any]],
-    methods: Sequence[str],
-    completed: Dict[Tuple[int, str, str], List[Dict[str, Any]]],
-    raw_output: Path,
-    args: argparse.Namespace,
-) -> None:
-    b12_methods = [m for m in methods if m in B12_METHODS]
-    if not b12_methods:
-        return
-    jobs: List[Tuple[int, Dict[str, Any], str, int]] = []
-    for row_idx, row in enumerate(rows):
-        if row_idx % max(1, args.row_shard_count) != args.row_shard_index:
-            continue
-        for method in b12_methods:
-            if not (row_question(row, method).strip() and prompt_context(row, method).strip()):
-                continue
-            done = completed_candidate_indices(completed, row_idx, method, "answer_conditioned")
-            for cand_idx in range(args.k):
-                if cand_idx not in done:
-                    jobs.append((row_idx, row, method, cand_idx))
-    if not jobs:
-        return
-
-    import torch
-
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model, tokenizer = load_hf_model_and_tokenizer(args.model, device, args.b12_device_map)
-    written = 0
-    for start in range(0, len(jobs), args.b12_batch_size):
-        batch = jobs[start : start + args.b12_batch_size]
-        out_rows = generate_b12_batch(model, tokenizer, batch, args, device)
-        append_jsonl(raw_output, out_rows)
-        for row in out_rows:
-            completed[(int(row["row_idx"]), str(row["method"]), str(row["condition"]))].append(row)
-        written += len(out_rows)
-        print(json.dumps({"b12_completed": written, "b12_total": len(jobs)}), flush=True)
-        del out_rows
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-    del model
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
-
 def generate(args: argparse.Namespace) -> None:
     from transformers import AutoTokenizer
 
@@ -912,8 +779,6 @@ def generate(args: argparse.Namespace) -> None:
     if args.phase in {"all", "special"} and not args.only_blind:
         completed = load_completed(args.raw_output)
         select_b13_bon_samples(rows, completed, args.raw_output, args)
-        completed = load_completed(args.raw_output)
-        generate_b12_samples(rows, methods, completed, args.raw_output, args)
         completed = load_completed(args.raw_output)
 
     if args.skip_finalize:
@@ -1171,12 +1036,6 @@ def main() -> None:
     p.add_argument("--b13-selection-rule", choices=["combo", "prob"], default="combo")
     p.add_argument("--b13-tau-g", type=float, default=0.1)
     p.add_argument("--b13-device-map", default="")
-    p.add_argument("--b12-gamma", type=float, default=0.5)
-    p.add_argument("--b12-anneal-frac", type=float, default=0.15)
-    p.add_argument("--b12-batch-size", type=int, default=1)
-    p.add_argument("--b12-max-new-tokens", type=int, default=2048)
-    p.add_argument("--b12-max-prompt-tokens", type=int, default=24576)
-    p.add_argument("--b12-device-map", default="")
     p.set_defaults(func=generate)
 
     p = sub.add_parser("score")

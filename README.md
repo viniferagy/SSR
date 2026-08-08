@@ -193,9 +193,6 @@ venv/bin/python scripts/prepare_anchoring_input.py convert-ssr-rcot \
   `length_effect_diagnostics.py`, and `scripts/analyze_answer_swap_sensitivity.py`:
   paper robustness diagnostics.
 
-`insights/baselines-code/` retains the separate reference implementations for
-the contrastive and Tier-1 baseline ablations.
-
 ## Release Scope
 
 This code-only release reproduces RCoT generation and anchoring analysis from

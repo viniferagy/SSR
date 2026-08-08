@@ -67,7 +67,6 @@ METHOD_ORDER = [
     "A6-Gist",
     "B11-NGramBlock",
     "B13-BoN",
-    "B12-Contrastive-g0.5",
     "CV-SUP",
     "DL-SUP",
     "FS-SUP",
